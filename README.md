@@ -120,19 +120,102 @@ echo "allowed_users=anybody" > /usr/local/etc/X11/Xwrapper.config
 
 reboot
 
-# OpenBSD
+# NetBSD
 
-Install the following packages:
+First steps
 
-pkg_add git
-pkg_add ksh93         # OpenBSD ksh is still _not_ sufficient
-pkg_add motif         # OpenBSD 6.0+
-pkg_add tcl-8.6.6p0   # or whatever tcl v8.6 version is available
-pkg_add gmake autoconf automake libtool bison opensp
+Install NetBSD/i386 or NetBSD/amd64.
+(versions from 5.1.2 to 7.0 have been tested)
+NetBSD 9.2
 
-Download and build CDE
+For NetBSD 9.2, go to the following link from a user on the updated packages and instructions needed. When the autoconf version of CDE (v2.4.0a+) get's closer to a release, the current instructions will be mostly replaced with the contents of this post. NOTE: the patches described in that post should not be needed in current master as of 12/17/21.
 
-OpenBSD support is broken in release 2.2.4, but fixed in git 2.2.4a and later versions.
+NOTE: for documentation to build properly, you should increase the size of the /tmp partition. By default in 9.2, it's 10MB which will cause NodeParser to fail due to running out of space. I increased this to 256MB on a 4GB system. This resolved the NodeParser failure.
+
+https://sourceforge.net/p/cdesktopenv/wiki/NetBSD/#c4bd
+
+The following instructions are dated and will be updated at a later date.
+Install packages
+
+The build expects the following packages under /usr/pkg:
+
+    git
+    ast-ksh
+    freetype2
+    font-adobe-75dpi
+    font-adobe-100dpi
+    fontconfig
+    motif (for CDE version 2.3 or newer)
+    pam-pwauth_suid
+    tcl
+    autoconf
+    automake
+    libtool
+    gmake
+    opensp
+    sessreg
+    lmdb
+
+All other required packages are installed as dependencies.
+
+Note
+If you are using pkgsrc to install these packages, please note that ast-ksh does not build in NetBSD 7.0 and it doesn't look like it is going to be fixed anytime soon. Check your PKG_PATH environment variable and make sure it contains:
+
+ftp://ftp.netbsd.org/pub/pkgsrc/packages/NetBSD/i386/6.1/All/ (for the i386 version) or
+ftp://ftp.netbsd.org/pub/pkgsrc/packages/NetBSD/amd64/6.0/All/ (for the x64 version)
+
+then install it by issuing pkg_add -v ast-ksh
+
+As of February 2019 ast-ksh builds again with NetBSD 7.2, but fails for NetBSD 8.0. The 6.x binaries do however work fine in NetBSD 8.0.
+
+As ast-ksh has been updated in 2020. It builds fine inthe current release NetBSD 9.
+Build and Install Motif
+
+NOTE: For versions of CDE 2.3 or later, this step can be skipped. Use the OS packaged version of Motif.
+
+Build Motif from source! This has to be done as root.
+
+Download pkgsrc from http://ftp.netbsd.org/pub/pkgsrc/stable/pkgsrc.tar.gz
+and install it under /usr
+
+Change into motif directory:
+cd /usr/pkgsrc/x11/motif
+
+Build and install motif:
+
+  make
+  make install
+
+Note
+add the two lines
+
+.include "../../x11/libXp/buildlink3.mk"
+.include "../../x11/printproto/buildlink3.mk"
+
+at the end of /usr/pkgsrc/mk/motif.buildlink3.mk or other Motif dependent packages will not build properly.
+Edit system files
+For CDE version 2.3 or later
+
+Add to /etc/rc.conf
+
+  rpcbind=YES             rpcbind_flags="-l"
+
+For CDE versions earlier than 2.3, you must enable insecure mode (-i):
+
+Add to /etc/rc.conf
+
+  rpcbind=YES             rpcbind_flags="-l -i"
+
+In addition, for versions of CDE prior to 2.3, you must add your hostname (uname -n) to the localhost line in /etc/hosts or ttsession will fail to start.
+Add fontpath to Xserver
+
+Add to "Files"-section of /etc/X11/xorg.conf
+
+    FontPath     "/usr/pkg/share/fonts/X11/100dpi/"
+    FontPath     "/usr/pkg/share/fonts/X11/75dpi/"
+
+Reboot
+Clone the git repository or download the latest source code
 
 Use the git clone command here:
 
@@ -147,145 +230,52 @@ git clone git://git.code.sf.net/p/cdesktopenv/code cdesktopenv-code
 Or download the latest source release:
 
 Note: The source archive will become out of date. When you want the latest code, clone the git repository.
-Build
+Make symlinks
 
-Version 2.4.0a and newer (autoconf)
+NOTE: For CDE version 2.3 or later, this step can be skipped. However, as of Nov. 28th 2018 it is still required if you use the modular x-org from the pkgsrc system
 
-For the BSD's, you must use gmake, and you must specify the location of the TCL install directory (the below example assumes TCL v8.6). This should be the directory that contains the tclConfig.sh file. On OpenBSD specifically, you must set some environment variables and add some C/CXXFLAGS to the configure step:
+If you use the native X11 installation that came with NetBSD, create the following symlinks
 
-$ export AUTOMAKE_VERSION=x.xx # whatever versions you have installed
-$ export AUTOCONF_VERSION=x.xx
-$ export LIBRARY_PATH="/usr/local/lib"
+  cd cdesktopenv-code/cde
+  mkdir -p imports/x11/include
+  ln -s /usr/X11R7/include/X11 imports/x11/include/
+  ln -s /usr/pkg/include/Xm imports/x11/include/
+  ln -s /usr/pkg/include/fontconfig imports/x11/include/
+  ln -s /usr/pkg/include/freetype2/ft2build.h imports/x11/include/
+
+If you installed modular-xorg from the pkgsrc tree, create the following symlinks instead:
+
+  ln -s /usr/pkg /usr/X11R7
+  cd cdesktopenv-code/cde
+  mkdir -p imports/x11/include
+  ln -s /usr/X11R7/include/X11 imports/x11/include/
+  ln -s /usr/X11R7/include/Xm imports/x11/include/
+  ln -s /usr/X11R7/include/fontconfig imports/x11/include/
+  ln -s /usr/X11R7/include/freetype2/ft2build.h imports/x11/include/
+
+Build CDE
+
+Version 2.5.0 and newer (autoconf)
+
+For the BSD's, you must use gmake, and you must specify the location of the TCL install directory (the below example assumes TCL v8.6).
+
 $ ./autogen.sh
-$ ./configure --with-tcl=/usr/local/lib/tcl/tcl8.6 MAKE="gmake" \
-        CFLAGS="-I/usr/local/include" CXXFLAGS="-I/usr/local/include"
+$ ./configure --with-tcl=/usr/local/lib/tcl8.6 MAKE="gmake"
 $ gmake
-$ doas gmake install
+$ sudo gmake install
 
-Note: Documentation does not build as of version 2.4.0a. This is an issue with the new build system and is currently being worked on.
-
-Version 2.4.0 and earlier (imake)
+Version 2.4.0 and earlier (imake) - deprecated
 
 cd cdesktopenv-code/cde
 make World
 admin/IntegTools/dbTools/installCDE -s `pwd`
 
-Configure system
+Start CDE
 
-add to /etc/rc.conf.local
+You can now start the CDE login manager as root:
 
-shlib_dirs="/usr/dt/lib"
-
-You will need to add entries for your hostname (NOT just localhost) in /etc/hosts
-
-127.0.0.1    myname    myname.my.domain
-::1          myname    myname.my.domain
-
-and create an init script for rpc.cmsd, for example:
-
-daemon="/usr/dt/bin/rpc.cmsd &"
-
-. /etc/rc.d/rc.subr
-
-pexp="rpc.cmsd: ${daemon}${daemon_flags:+ ${daemon_flags}} \[listener\].*"
-
-rc_reload() {
-        ${daemon} ${daemon_flags} -t && pkill -HUP -xf "${pexp}"
-}
-
-rc_cmd $1
-
-Save as /etc/rc.d/cmsd
-
-doas rcctl enable cmsd
-doas rcctl enable inetd # not sure this does anything but might be needed
-doas rcctl enable portmap # needed to get past dthello
-
-Reboot
-Start and test CDE
-
-You can now start dtlogin manager as root (not recommended):
-
-/usr/dt/bin/dtlogin -nodaemon
+  /usr/dt/bin/dtlogin -nodaemon
 
 Alternatively, you can start an X session as a normal user:
 
-startx /usr/dt/bin/Xsession
-
-Cleanup and post-install
-
-To automatically source your .profile when opening a terminal in CDE uncomment the last line in your user's .dtprofile file:
-
-DTSOURCEPROFILE=true
-
-Starting dtlogin at boot (not recommended for security reasons)
-
-To automatically go into the CDE graphical login at system startup add the following line to /etc/rc.conf.local
-
-xenodm_flags=NO
-pkg_scripts=dtlogin
-
-And create a new file /etc/rc.d/dtlogin with the following contents:
-
-#!/bin/sh
-
-daemon="/usr/dt/bin/dtlogin"
-
-. /etc/rc.d/rc.subr
-
-rc_reload=NO
-
-if [ -n "${INRC}" ]; then
-# on boot: make sure we don't hang in _rc_wait
-_rc_wait() {
-    return 0
-}
-# on boot: wait for ttys to be initialized
-rc_start() {
-    ( local i=0
-    while ! pgrep -qf "^/usr/libexec/getty "; do
-        sleep 1
-        [ $((i++)) -ge 10 ] && return 1
-    done
-    ${rcexec} "${daemon} ${daemon_flags}" ) &
-}
-fi
-
-rc_cmd $1
-
-Then make it executable:
-
-chmod +x /etc/rc.d/dtlogin
-
-Using xenodm (recommended)
-
-if you don't like dtlogin, you can start CDE via xenodm:
-
-ln -s /usr/dt/bin/Xsession ~/.xsession
-
-Or to make it default for all newly created users:
-
-ln -s /usr/dt/bin/Xsession /etc/skel/.xsession
-
-Man pages
-
-To make man work:
-
-cp /etc/examples/man.conf /etc/man.conf
-
-Then add the following to /etc/man.conf
-
-manpath /usr/dt/share/man
-
-You will need to logout/login for the change to take effect.
-Screenshots
-
-
-An older screenshot.
-
-
-A newer screenshot with some recommended customizations:
-
-    Lines in dtwm's en_US.utf-8 app defaults have been uncommented so the front panel uses the correct color
-    The mailer is old and broken, so its icon has been replaced with the Internet application group
-    Dtinfo does not currently build, so its icon has been replaced with the Help Manager (this was the default long ago)
+  startx /usr/dt/bin/Xsession
